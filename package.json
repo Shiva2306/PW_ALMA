@@ -1,0 +1,33 @@
+{
+  "name": "playwright_august_framework",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test:master": "playwright test --grep @master --headed",
+    "test:sanity": "playwright test --grep @sanity",
+    "test:sanity:headed": "playwright test --grep @sanity --headed",
+    "test:regression": "playwright test --grep @regression --headed",
+    "test:datadriven": "playwright test --grep @datadriven --headed",
+    "test:master:headed": "playwright test --grep @master --headed",
+    "allure:report": "allure generate allure-results --clean -o allure-report && allure open allure-report",
+    "clean": "rimraf allure-results allure-report",
+   "test:sanity:clean": "npm run clean && npm run test:sanity:headed"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "description": "",
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^26.2.0",
+    "allure-commandline": "^2.43.0",
+    "allure-playwright": "^3.11.0",
+    "rimraf": "^6.1.3"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^10.6.0",
+    "csv-parse": "^7.0.2",
+    "dotenv": "^17.4.2"
+  }
+}

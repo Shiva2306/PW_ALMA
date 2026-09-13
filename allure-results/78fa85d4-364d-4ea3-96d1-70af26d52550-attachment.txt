@@ -1,0 +1,9 @@
+{
+  id: 8603769,
+  name: 'uday',
+  email: 'uday_1788585098079@gmail.com',
+  gender: 'male',
+  status: 'active'
+}
+[Function: status]
+[Function: statusText]

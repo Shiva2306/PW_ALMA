@@ -1,0 +1,9 @@
+{
+  id: 8603773,
+  name: 'Raj',
+  email: 'uday_1788585476229@gmail.com',
+  gender: 'male',
+  status: 'inactive'
+}
+200
+OK

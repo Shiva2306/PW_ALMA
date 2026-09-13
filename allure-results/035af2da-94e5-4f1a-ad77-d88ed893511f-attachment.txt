@@ -1,0 +1,9 @@
+{
+  id: 8603782,
+  name: 'uday',
+  email: 'uday_1788586544772@gmail.com',
+  gender: 'male',
+  status: 'active'
+}
+201
+Created

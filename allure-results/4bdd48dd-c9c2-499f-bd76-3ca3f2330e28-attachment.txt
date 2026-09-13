@@ -1,0 +1,3 @@
+Promise { <pending> }
+[Function: status]
+[Function: statusText]

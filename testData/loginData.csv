@@ -1,0 +1,10 @@
+
+
+
+testName, email, password, expected
+invalid1, abc@gmail.com, abc@gmail.com, failure
+invalid2, def@gmail.com, def@gmail.com, failure
+invalid3, xyz@gmail.com, xyz@gmail.com, failure
+invalid4, pqr@gmail.com, pqr@gmail.com, failure
+valid1, Shiva_ingenious123@gmail.com, Shiva_ingenious123@gmail.com, success
+valid2, Shiva_ingenious456@gmail.com, Shiva_ingenious456@gmail.com, success
