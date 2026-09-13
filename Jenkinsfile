@@ -1,392 +1,180 @@
+
 pipeline {
-agent any
+    agent any
 
-```
-tools {
-    nodejs 'NodeJS 24.18.0'
-    maven 'Maven-3.9'
-    jdk 'JDK-21'
-    allure 'Allure'
-}
+    tools {
+        jdk 'JDK-21'
+    }
 
-parameters {
-    choice(
-        name: 'ENVIRONMENT',
-        choices: ['QA', 'dev', 'stage', 'Prod'],
-        description: 'Select environment to run tests'
-    )
+    // Runs automatically every day at 10:00 PM
+    triggers {
+        cron('0 22 * * *')
+    }
 
-    choice(
-        name: 'BROWSER',
-        choices: ['chromium', 'firefox', 'webkit'],
-        description: 'Select browser'
-    )
+    parameters {
 
-    choice(
-        name: 'TEST_SUITE',
-        choices: ['all', 'smoke', 'regression', 'api-smoke'],
-        description: 'Select test suite'
-    )
-}
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['dev', 'qa', 'staging', 'prod'],
+            description: 'Select Environment'
+        )
 
-options {
-    timeout(time: 30, unit: 'MINUTES')
-    buildDiscarder(logRotator(numToKeepStr: '20'))
-    disableConcurrentBuilds()
-}
+        choice(
+            name: 'BROWSER',
+            choices: ['chromium', 'firefox', 'webkit'],
+            description: 'Select Browser'
+        )
 
-stages {
+        choice(
+            name: 'TEST_SUITE',
+            choices: ['all', 'smoke', 'sanity', 'regression', 'master', 'datadriven'],
+            description: 'Select Test Suite'
+        )
+    }
 
-    // =====================================================
-    // STAGE 1: BUILD APP + UNIT TESTS
-    // =====================================================
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        disableConcurrentBuilds()
+    }
 
-    stage('Build & Unit Tests') {
-        steps {
-            echo "========================================="
-            echo "  Building App + Running Unit Tests"
-            echo "========================================="
+    stages {
 
-            dir('dev-app') {
-                git url: 'https://github.com/jglick/simple-maven-project-with-tests.git',
-                    branch: 'master'
-
-                sh 'mvn clean install -Dmaven.test.failure.ignore=true'
+        stage('Verify Environment') {
+            steps {
+                bat 'node -v'
+                bat 'npm -v'
+                bat 'java -version'
             }
         }
 
-        post {
-            always {
-                junit 'dev-app/target/surefire-reports/*.xml'
+        stage('Install Dependencies') {
+            steps {
+                echo "Installing Node Packages..."
+                bat 'npm ci'
             }
         }
-    }
 
-    // =====================================================
-    // STAGE 2: DEPLOY DEV
-    // =====================================================
-
-    stage('Deploy to DEV') {
-        steps {
-            echo "Deploying to DEV..."
+        stage('Install Playwright Browsers') {
+            steps {
+                echo "Installing Playwright Browsers..."
+                bat 'npx playwright install'
+            }
         }
-    }
 
-    // =====================================================
-    // STAGE 3: DEV SANITY
-    // =====================================================
+        stage('Approval Before Production') {
 
-    stage('DEV - Sanity Tests') {
-        steps {
-            echo "========================================="
-            echo "  Running SANITY @smoke on DEV"
-            echo "========================================="
+            when {
+                expression {
+                    params.ENVIRONMENT == 'prod'
+                }
+            }
 
-            sh 'mkdir -p reports-dev/html allure-results-dev'
-
-            withCredentials([
-                usernamePassword(
-                    credentialsId: 'dev-credentials',
-                    usernameVariable: 'USERNAME',
-                    passwordVariable: 'PASSWORD'
-                ),
-                string(
-                    credentialsId: 'dev-base-url',
-                    variable: 'BASE_URL'
+            steps {
+                input(
+                    message: "Execute Production Tests?",
+                    ok: "Continue"
                 )
-            ]) {
-
-                sh '''
-                    npm ci
-
-                    npx playwright test \
-                        --project=chromium \
-                        --grep @smoke
-                '''
             }
         }
 
-        post {
-            always {
-                sh '''
-                    npx allure generate allure-results-dev \
-                        --clean \
-                        -o reports-dev/allure || true
-                '''
+        stage('Run Playwright Tests') {
 
-                publishHTML(target: [
-                    reportName: 'DEV Sanity - PW HTML Report',
-                    reportDir: 'reports-dev/html',
-                    reportFiles: 'index.html',
-                    keepAll: true,
-                    alwaysLinkToLastBuild: true
-                ])
+            steps {
 
-                publishHTML(target: [
-                    reportName: 'DEV Sanity - Allure Report',
-                    reportDir: 'reports-dev/allure',
-                    reportFiles: 'index.html',
-                    keepAll: true,
-                    alwaysLinkToLastBuild: true
-                ])
+                script {
+
+                    def grepCommand = ''
+
+                    if (params.TEST_SUITE != 'all') {
+                        grepCommand = "--grep @${params.TEST_SUITE}"
+                    }
+
+                    echo "======================================="
+                    echo "Environment : ${params.ENVIRONMENT}"
+                    echo "Browser     : ${params.BROWSER}"
+                    echo "Suite       : ${params.TEST_SUITE}"
+                    echo "======================================="
+
+                    bat """
+                        set ENV=${params.ENVIRONMENT}
+                        npx playwright test --project=${params.BROWSER} ${grepCommand}
+                    """
+                }
             }
         }
     }
 
-    // =====================================================
-    // STAGE 4: DEPLOY QA
-    // =====================================================
+    post {
 
-    stage('Deploy to QA') {
-        steps {
-            echo "Deploying to QA..."
-        }
-    }
+        always {
 
-    // =====================================================
-    // STAGE 5: QA REGRESSION
-    // =====================================================
+            echo "======================================="
+            echo "PUBLISHING TEST REPORTS"
+            echo "======================================="
 
-    stage('QA - Regression Tests') {
-        steps {
-            echo "========================================="
-            echo "  Running REGRESSION on QA"
-            echo "========================================="
+            script {
 
-            sh 'mkdir -p reports-qa/html allure-results-qa'
+                // Publish Playwright HTML Report
+                if (fileExists('playwright-report/index.html')) {
 
-            withCredentials([
-                usernamePassword(
-                    credentialsId: 'qa-credentials',
-                    usernameVariable: 'USERNAME',
-                    passwordVariable: 'PASSWORD'
-                ),
-                string(
-                    credentialsId: 'qa-base-url',
-                    variable: 'BASE_URL'
-                )
-            ]) {
+                    echo "Playwright HTML report found."
 
-                sh '''
-                    npm ci
+                    publishHTML([
+                        allowMissing: false,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'playwright-report',
+                        reportFiles: 'index.html',
+                        reportName: 'Playwright HTML Report'
+                    ])
 
-                    npx playwright test \
-                        --project=chromium
-                '''
+                } else {
+
+                    echo "WARNING: Playwright HTML report was not generated."
+                }
+
+
+                // Publish Allure Report using Jenkins Allure Plugin
+                if (fileExists('allure-results')) {
+
+                    echo "Allure results folder found."
+                    echo "Generating and publishing Allure report..."
+
+                    allure([
+                        includeProperties: false,
+                        jdk: 'JDK-21',
+                        results: [[path: 'allure-results']]
+                    ])
+
+                } else {
+
+                    echo "WARNING: allure-results folder was not generated."
+                }
             }
+
+
+            // Archive raw Allure result files
+            archiveArtifacts(
+                artifacts: 'allure-results/**',
+                allowEmptyArchive: true
+            )
         }
 
-        post {
-            always {
-                sh '''
-                    npx allure generate allure-results-qa \
-                        --clean \
-                        -o reports-qa/allure || true
-                '''
 
-                publishHTML(target: [
-                    reportName: 'QA Regression - PW HTML Report',
-                    reportDir: 'reports-qa/html',
-                    reportFiles: 'index.html',
-                    keepAll: true,
-                    alwaysLinkToLastBuild: true
-                ])
+        success {
 
-                publishHTML(target: [
-                    reportName: 'QA Regression - Allure Report',
-                    reportDir: 'reports-qa/allure',
-                    reportFiles: 'index.html',
-                    keepAll: true,
-                    alwaysLinkToLastBuild: true
-                ])
-            }
-        }
-    }
-
-    // =====================================================
-    // STAGE 6: DEPLOY STAGE
-    // =====================================================
-
-    stage('Deploy to STAGE') {
-        steps {
-            echo "Deploying to STAGE..."
-        }
-    }
-
-    // =====================================================
-    // STAGE 7: STAGE SANITY
-    // =====================================================
-
-    stage('STAGE - Sanity Tests') {
-        steps {
-            echo "========================================="
-            echo "  Running SANITY @smoke on STAGE"
-            echo "========================================="
-
-            sh 'mkdir -p reports-stage/html allure-results-stage'
-
-            withCredentials([
-                usernamePassword(
-                    credentialsId: 'stage-credentials',
-                    usernameVariable: 'USERNAME',
-                    passwordVariable: 'PASSWORD'
-                ),
-                string(
-                    credentialsId: 'stage-base-url',
-                    variable: 'BASE_URL'
-                )
-            ]) {
-
-                sh '''
-                    npm ci
-
-                    npx playwright test \
-                        --project=chromium \
-                        --grep @smoke
-                '''
-            }
+            echo "======================================="
+            echo "PIPELINE EXECUTED SUCCESSFULLY"
+            echo "======================================="
         }
 
-        post {
-            always {
-                sh '''
-                    npx allure generate allure-results-stage \
-                        --clean \
-                        -o reports-stage/allure || true
-                '''
 
-                publishHTML(target: [
-                    reportName: 'STAGE Sanity - PW HTML Report',
-                    reportDir: 'reports-stage/html',
-                    reportFiles: 'index.html',
-                    keepAll: true,
-                    alwaysLinkToLastBuild: true
-                ])
+        failure {
 
-                publishHTML(target: [
-                    reportName: 'STAGE Sanity - Allure Report',
-                    reportDir: 'reports-stage/allure',
-                    reportFiles: 'index.html',
-                    keepAll: true,
-                    alwaysLinkToLastBuild: true
-                ])
-            }
+            echo "======================================="
+            echo "PIPELINE EXECUTION FAILED"
+            echo "======================================="
         }
     }
-
-    // =====================================================
-    // STAGE 8: PROD APPROVAL
-    // =====================================================
-
-    stage('Approval for PROD') {
-        steps {
-            input message: 'Deploy to PROD?',
-                ok: 'Yes, Deploy!',
-                submitter: 'admin'
-        }
-    }
-
-    // =====================================================
-    // STAGE 9: DEPLOY PROD
-    // =====================================================
-
-    stage('Deploy to PROD') {
-        steps {
-            echo "Deploying to PROD..."
-        }
-    }
-
-    // =====================================================
-    // STAGE 10: PROD SMOKE
-    // =====================================================
-
-    stage('PROD - Smoke Tests') {
-        steps {
-            echo "========================================="
-            echo "  Running SMOKE @smoke on PROD"
-            echo "========================================="
-
-            sh 'mkdir -p reports-prod/html allure-results-prod'
-
-            withCredentials([
-                usernamePassword(
-                    credentialsId: 'prod-credentials',
-                    usernameVariable: 'USERNAME',
-                    passwordVariable: 'PASSWORD'
-                ),
-                string(
-                    credentialsId: 'prod-base-url',
-                    variable: 'BASE_URL'
-                )
-            ]) {
-
-                sh '''
-                    npm ci
-
-                    npx playwright test \
-                        --project=chromium \
-                        --grep @smoke
-                '''
-            }
-        }
-
-        post {
-            always {
-                sh '''
-                    npx allure generate allure-results-prod \
-                        --clean \
-                        -o reports-prod/allure || true
-                '''
-
-                publishHTML(target: [
-                    reportName: 'PROD Smoke - PW HTML Report',
-                    reportDir: 'reports-prod/html',
-                    reportFiles: 'index.html',
-                    keepAll: true,
-                    alwaysLinkToLastBuild: true
-                ])
-
-                publishHTML(target: [
-                    reportName: 'PROD Smoke - Allure Report',
-                    reportDir: 'reports-prod/allure',
-                    reportFiles: 'index.html',
-                    keepAll: true,
-                    alwaysLinkToLastBuild: true
-                ])
-            }
-        }
-    }
-}
-
-// =====================================================
-// POST ACTIONS
-// NO SLACK
-// NO EMAIL
-// NO DOCKER
-// =====================================================
-
-post {
-
-    success {
-        echo '==========================================='
-        echo '  PIPELINE: SUCCESS'
-        echo '==========================================='
-        echo "Build Number: ${env.BUILD_NUMBER}"
-        echo "Environment: ${params.ENVIRONMENT}"
-    }
-
-    failure {
-        echo '==========================================='
-        echo '  PIPELINE: FAILED'
-        echo '==========================================='
-        echo "Build Number: ${env.BUILD_NUMBER}"
-        echo "Environment: ${params.ENVIRONMENT}"
-    }
-
-    always {
-        echo "Jenkins pipeline execution completed."
-    }
-}
-```
-
 }
