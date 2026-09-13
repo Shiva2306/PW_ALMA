@@ -33,13 +33,9 @@ pipeline {
         )
     }
 
-    environment {
-        SLACK_CHANNEL  = '#general'
-    }
 
     options {
         timeout(time: 30, unit: 'MINUTES')
-        timestamps()
         buildDiscarder(logRotator(numToKeepStr: '20'))
         disableConcurrentBuilds()
     }
