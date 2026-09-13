@@ -43,25 +43,38 @@ pipeline {
 
         stage('Verify Environment') {
             steps {
+                echo "======================================="
+                echo "VERIFYING ENVIRONMENT"
+                echo "======================================="
+
                 bat 'node -v'
                 bat 'npm -v'
                 bat 'java -version'
             }
         }
 
+
         stage('Install Dependencies') {
             steps {
-                echo "Installing Node Packages..."
+                echo "======================================="
+                echo "INSTALLING NODE DEPENDENCIES"
+                echo "======================================="
+
                 bat 'npm ci'
             }
         }
 
+
         stage('Install Playwright Browsers') {
             steps {
-                echo "Installing Playwright Browsers..."
+                echo "======================================="
+                echo "INSTALLING PLAYWRIGHT BROWSERS"
+                echo "======================================="
+
                 bat 'npx playwright install'
             }
         }
+
 
         stage('Approval Before Production') {
 
@@ -79,6 +92,31 @@ pipeline {
             }
         }
 
+
+        stage('Clean Old Reports') {
+            steps {
+
+                echo "======================================="
+                echo "CLEANING OLD REPORTS"
+                echo "======================================="
+
+                bat '''
+                    if exist allure-results (
+                        echo Deleting old Allure results...
+                        rmdir /s /q allure-results
+                    )
+
+                    if exist playwright-report (
+                        echo Deleting old Playwright HTML report...
+                        rmdir /s /q playwright-report
+                    )
+
+                    echo Old reports cleaned successfully.
+                '''
+            }
+        }
+
+
         stage('Run Playwright Tests') {
 
             steps {
@@ -92,9 +130,11 @@ pipeline {
                     }
 
                     echo "======================================="
+                    echo "RUNNING PLAYWRIGHT TESTS"
+                    echo "======================================="
                     echo "Environment : ${params.ENVIRONMENT}"
                     echo "Browser     : ${params.BROWSER}"
-                    echo "Suite       : ${params.TEST_SUITE}"
+                    echo "Test Suite  : ${params.TEST_SUITE}"
                     echo "======================================="
 
                     bat """
@@ -106,6 +146,7 @@ pipeline {
         }
     }
 
+
     post {
 
         always {
@@ -116,10 +157,14 @@ pipeline {
 
             script {
 
-                // Publish Playwright HTML Report
+                // ==========================================
+                // PLAYWRIGHT HTML REPORT
+                // ==========================================
+
                 if (fileExists('playwright-report/index.html')) {
 
                     echo "Playwright HTML report found."
+                    echo "Publishing Playwright HTML report..."
 
                     publishHTML([
                         allowMissing: false,
@@ -136,15 +181,20 @@ pipeline {
                 }
 
 
-                // Publish Allure Report using Jenkins Allure Plugin
+                // ==========================================
+                // ALLURE REPORT
+                // ==========================================
+
                 if (fileExists('allure-results')) {
 
                     echo "Allure results folder found."
-                    echo "Generating and publishing Allure report..."
+                    echo "Generating fresh Allure report..."
 
                     allure([
                         includeProperties: false,
                         jdk: 'JDK-21',
+                        properties: [],
+                        reportBuildPolicy: 'ALWAYS',
                         results: [[path: 'allure-results']]
                     ])
 
@@ -155,7 +205,12 @@ pipeline {
             }
 
 
-            // Archive raw Allure result files
+            // ==========================================
+            // ARCHIVE ALLURE RESULTS
+            // ==========================================
+
+            echo "Archiving Allure result files..."
+
             archiveArtifacts(
                 artifacts: 'allure-results/**',
                 allowEmptyArchive: true
